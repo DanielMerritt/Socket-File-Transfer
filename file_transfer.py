@@ -53,6 +53,9 @@ def parse_arguments() -> Tuple[Any]:
     server_argparser(subparsers)
     args = parser.parse_args()
     if args.mode == "client":
+        if not exists(args.filename) and not args.receive:
+            print(f"Can't find file: {args.filename}")
+            sys.exit()
         return (
             args.mode,
             args.target,
@@ -130,7 +133,13 @@ def send_file(connection: socket.socket, filename: str, file_len: int) -> None:
 
 
 def receive_metadata(connection: socket.socket) -> Dict[str, Any]:
-    json_metadata = connection.recv(256).strip(b"\x00").decode()
+    try:
+        json_metadata = connection.recv(256).strip(b"\x00").decode()
+    except UnicodeDecodeError:
+        print(
+            "Failed to decode metadata, most likely ssl was only specified on one side of the connection"
+        )
+        sys.exit()
     received_metadata = json.loads(json_metadata)
     print("Received Metadata!")
     return received_metadata
@@ -169,7 +178,16 @@ class Client:
         self.receive = receive
         self.encrypt = encrypt
         self.sock = self.initialise_socket()
-        self.sock.connect((target, port))
+        try:
+            self.sock.connect((target, port))
+        except ConnectionResetError:
+            print(
+                "Failed to connect, most likely SSL is only specified on one side of the connection"
+            )
+            sys.exit()
+        except ConnectionRefusedError:
+            print("Failed to connect to the target")
+            sys.exit()
 
     def initialise_socket(self) -> Union[socket.socket, ssl.SSLSocket]:
         sock = socket.socket()
@@ -201,6 +219,9 @@ class Client:
         }
         send_metadata(self.sock, metadata)
         received_metadata = receive_metadata(self.sock)
+        if "fail_message" in received_metadata:
+            print(received_metadata["fail_message"])
+            sys.exit()
         receive_file(self.sock, received_metadata, self.filename)
 
     def run(self) -> None:
@@ -271,12 +292,19 @@ class Server:
 
     def client_receive_protocol(self, received_metadata: Dict[str, Any]) -> None:
         filename = received_metadata["filename"]
-        file_len = os.stat(filename).st_size
-        md5sum = md5_file(filename, file_len)
-        metadata = {
-            "file_len": file_len,
-            "md5sum": md5sum,
-        }
+        if not exists(filename):
+            message = f"File {filename} doesn't exist"
+            print(message)
+            metadata = {"fail_message": message}
+            send_metadata(self.conn, metadata)
+            return
+        else:
+            file_len = os.stat(filename).st_size
+            md5sum = md5_file(filename, file_len)
+            metadata = {
+                "file_len": file_len,
+                "md5sum": md5sum,
+            }
         send_metadata(self.conn, metadata)
         send_file(self.conn, filename, file_len)
 
@@ -296,10 +324,10 @@ class Server:
             else:
                 self.client_send_protocol(received_metadata)
         finally:
-            sleep(0.1)
             self.close()
 
     def close(self) -> None:
+        sleep(0.1)
         if self.conn:
             self.conn.close()
         if self.encrypt:
