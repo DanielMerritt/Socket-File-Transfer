@@ -7,6 +7,7 @@ import string
 import ssl
 import sys
 import os
+from time import sleep
 from os.path import exists
 from typing import Tuple, Dict, Any, Optional, Union
 
@@ -218,6 +219,7 @@ class Client:
             self.close()
 
     def close(self) -> None:
+        sleep(0.1)
         if self.sock:
             self.sock.close()
 
@@ -294,6 +296,7 @@ class Server:
             else:
                 self.client_send_protocol(received_metadata)
         finally:
+            sleep(0.1)
             self.close()
 
     def close(self) -> None:
