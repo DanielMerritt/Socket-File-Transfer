@@ -90,7 +90,6 @@ def md5sum_check(outfile: str, file_len: int, md5sum: str) -> None:
     new_md5sum = md5_file(outfile, file_len)
     if md5sum == new_md5sum:
         print("Outfile integrity Confirmed!")
-
     else:
         print("Outfile integrity doesn't match!")
 
@@ -210,12 +209,13 @@ class Client:
         await metadata for the file to receive, and then receive the file.
         """
         print("Connected!")
-        if self.receive:
-            self.client_receive_protocol()
-        else:
-            self.client_send_protocol()
-
-        self.close()
+        try:
+            if self.receive:
+                self.client_receive_protocol()
+            else:
+                self.client_send_protocol()
+        finally:
+            self.close()
 
     def close(self) -> None:
         if self.sock:
@@ -287,12 +287,14 @@ class Server:
         send metadata of requested file followed by the file, otherwise
         prepare to receive file specified within the metadata
         """
-        received_metadata = receive_metadata(self.conn)
-        if received_metadata["mode"] == "RECEIVE":
-            self.client_receive_protocol(received_metadata)
-        else:
-            self.client_send_protocol(received_metadata)
-        self.close()
+        try:
+            received_metadata = receive_metadata(self.conn)
+            if received_metadata["mode"] == "RECEIVE":
+                self.client_receive_protocol(received_metadata)
+            else:
+                self.client_send_protocol(received_metadata)
+        finally:
+            self.close()
 
     def close(self) -> None:
         if self.conn:
