@@ -166,7 +166,7 @@ class Client:
         metadata = {
             "file_len": file_len,
             "md5sum": md5sum,
-            "filename": self.filename.split("/")[-1],
+            "filename": os.path.basename(self.filename),
             "mode": "SEND",
         }
         send_metadata(self.sock, metadata)
@@ -253,7 +253,7 @@ class Server:
         """
         Receive Metadata, then if client specifies recieve mode,
         send metadata of requested file followed by the file, otherwise
-        prepare to receive file specified within metadata
+        prepare to receive file specified within the metadata
         """
         received_metadata = receive_metadata(self.conn)
         if received_metadata["mode"] == "RECEIVE":
