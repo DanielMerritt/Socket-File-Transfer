@@ -97,13 +97,23 @@ def md5sum_check(outfile: str, file_len: int, md5sum: str) -> None:
 
 def send_metadata(connection: socket.socket, metadata: Dict[str, Any]) -> None:
     json_metadata = json.dumps(metadata)
-    if len(json_metadata) <= 128:
-        padded_json_metadata = json_metadata.encode().ljust(128, b"\x00")
+    if len(json_metadata) <= 256:
+        padded_json_metadata = json_metadata.encode().ljust(256, b"\x00")
     else:
         print("Metadata (probably file name) too long!")
         sys.exit()
     connection.sendall(padded_json_metadata)
     print("Sent Metadata!")
+
+
+def log_progress(progress: int, total: int) -> None:
+    progress_percentage = progress * 100 // total
+    if progress_percentage >= 100:
+        print("Progress: 100%")
+        return
+
+    print(f"Progress: {progress_percentage}%", end="\r", flush=True)
+    return
 
 
 def send_file(connection: socket.socket, filename: str, file_len: int) -> None:
@@ -113,11 +123,14 @@ def send_file(connection: socket.socket, filename: str, file_len: int) -> None:
             data = f.read(4096)
             remaining_len -= 4096
             connection.sendall(data)
+            ack = connection.recv(4)
+            assert ack == b"<OK>"
+            log_progress(file_len - remaining_len, file_len)
     print("Sent file!")
 
 
 def receive_metadata(connection: socket.socket) -> Dict[str, Any]:
-    json_metadata = connection.recv(128).strip(b"\x00").decode()
+    json_metadata = connection.recv(256).strip(b"\x00").decode()
     received_metadata = json.loads(json_metadata)
     print("Received Metadata!")
     return received_metadata
@@ -142,6 +155,8 @@ def receive_file(
             data = connection.recv(4096)
             f.write(data)
             received_data += len(data)
+            log_progress(received_data, file_len)
+            connection.sendall(b"<OK>")
     md5sum_check(outfile, file_len, md5sum)
     print(f"\nReceived all data!")
 
