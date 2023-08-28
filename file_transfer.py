@@ -8,9 +8,10 @@ import ssl
 import sys
 import os
 from os.path import exists
+from typing import Tuple, Dict, Any, Optional, Union
 
 
-def client_argparser(subparsers):
+def client_argparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     client_parser = subparsers.add_parser("client", help="client mode")
     client_parser.add_argument("filename", help="set file to send/receive")
     client_parser.add_argument("target", help="set target address")
@@ -22,7 +23,7 @@ def client_argparser(subparsers):
     return client_parser
 
 
-def server_argparser(subparsers):
+def server_argparser(subparsers: argparse._SubParsersAction) -> argparse.ArgumentParser:
     server_parser = subparsers.add_parser("server", help="server mode")
 
     server_parser.add_argument(
@@ -42,7 +43,7 @@ def server_argparser(subparsers):
     return server_parser
 
 
-def parse_arguments():
+def parse_arguments() -> Tuple[Any]:
     parser = argparse.ArgumentParser(
         description="Socket client/server for file transfer"
     )
@@ -74,7 +75,7 @@ def parse_arguments():
         sys.exit()
 
 
-def md5_file(file_name, file_len):
+def md5_file(file_name: str, file_len: int) -> str:
     md5sum = hashlib.md5()
     remaining_len = file_len
     with open(file_name, "rb") as f:
@@ -85,7 +86,7 @@ def md5_file(file_name, file_len):
     return md5sum.hexdigest()
 
 
-def md5sum_check(outfile, file_len, md5sum):
+def md5sum_check(outfile: str, file_len: int, md5sum: str) -> None:
     new_md5sum = md5_file(outfile, file_len)
     if md5sum == new_md5sum:
         print("Outfile integrity Confirmed!")
@@ -94,7 +95,7 @@ def md5sum_check(outfile, file_len, md5sum):
         print("Outfile integrity doesn't match!")
 
 
-def send_metadata(connection, metadata):
+def send_metadata(connection: socket.socket, metadata: Dict[str, Any]) -> None:
     json_metadata = json.dumps(metadata)
     if len(json_metadata) <= 128:
         padded_json_metadata = json_metadata.encode().ljust(128, b"\x00")
@@ -105,7 +106,7 @@ def send_metadata(connection, metadata):
     print("Sent Metadata!")
 
 
-def send_file(connection, filename, file_len):
+def send_file(connection: socket.socket, filename: str, file_len: int) -> None:
     remaining_len = file_len
     with open(filename, "rb") as f:
         while remaining_len > 0:
@@ -115,14 +116,18 @@ def send_file(connection, filename, file_len):
     print("Sent file!")
 
 
-def receive_metadata(connection):
+def receive_metadata(connection: socket.socket) -> Dict[str, Any]:
     json_metadata = connection.recv(128).strip(b"\x00").decode()
     received_metadata = json.loads(json_metadata)
     print("Received Metadata!")
     return received_metadata
 
 
-def receive_file(connection, received_metadata, outfile=None):
+def receive_file(
+    connection: socket.socket,
+    received_metadata: Dict[str, Any],
+    outfile: Optional[str] = None,
+) -> None:
     file_len = received_metadata["file_len"]
     md5sum = received_metadata["md5sum"]
     if not outfile:
@@ -142,14 +147,16 @@ def receive_file(connection, received_metadata, outfile=None):
 
 
 class Client:
-    def __init__(self, target, port, filename, encrypt, receive):
+    def __init__(
+        self, target: str, port: int, filename: str, encrypt: bool, receive: bool
+    ) -> None:
         self.filename = filename
         self.receive = receive
         self.encrypt = encrypt
         self.sock = self.initialise_socket()
         self.sock.connect((target, port))
 
-    def initialise_socket(self):
+    def initialise_socket(self) -> Union[socket.socket, ssl.SSLSocket]:
         sock = socket.socket()
         if self.encrypt:
             ssl_context = ssl.create_default_context()
@@ -160,7 +167,7 @@ class Client:
             return ssock
         return sock
 
-    def client_send_protocol(self):
+    def client_send_protocol(self) -> None:
         file_len = os.stat(self.filename).st_size
         md5sum = md5_file(self.filename, file_len)
         metadata = {
@@ -172,7 +179,7 @@ class Client:
         send_metadata(self.sock, metadata)
         send_file(self.sock, self.filename, file_len)
 
-    def client_receive_protocol(self):
+    def client_receive_protocol(self) -> None:
         metadata = {
             "filename": self.filename,
             "mode": "RECEIVE",
@@ -181,7 +188,7 @@ class Client:
         received_metadata = receive_metadata(self.sock)
         receive_file(self.sock, received_metadata, self.filename)
 
-    def run(self):
+    def run(self) -> None:
         """
         If send mode, send metadata of the file followed by the file itself,
         otherwise if receive mode, send metadata for requested file,
@@ -195,13 +202,21 @@ class Client:
 
         self.close()
 
-    def close(self):
+    def close(self) -> None:
         if self.sock:
             self.sock.close()
 
 
 class Server:
-    def __init__(self, server, port, outfile, encrypt, certfile, keyfile):
+    def __init__(
+        self,
+        server: str,
+        port: int,
+        outfile: Optional[str],
+        encrypt: bool,
+        certfile: str,
+        keyfile: str,
+    ) -> None:
         self.outfile = outfile
         self.encrypt = encrypt
         self.sock = None
@@ -209,7 +224,9 @@ class Server:
         self.ssock = None
         self.conn = self.get_connection(server, port, certfile, keyfile)
 
-    def get_connection(self, server, port, certfile, keyfile):
+    def get_connection(
+        self, server: str, port: int, certfile: str, keyfile: str
+    ) -> socket.socket:
         self.sock = socket.socket()
         self.sock.bind((server, port))
         self.sock.listen()
@@ -225,7 +242,7 @@ class Server:
         print(f"\nConnection from {addr[0]}")
         return conn
 
-    def gen_ssl_context(self, certfile, keyfile):
+    def gen_ssl_context(self, certfile: str, keyfile: str) -> ssl.SSLContext:
         ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
         ssl_context.check_hostname = False
         try:
@@ -235,7 +252,7 @@ class Server:
             sys.exit()
         return ssl_context
 
-    def client_receive_protocol(self, received_metadata):
+    def client_receive_protocol(self, received_metadata: Dict[str, Any]) -> None:
         filename = received_metadata["filename"]
         file_len = os.stat(filename).st_size
         md5sum = md5_file(filename, file_len)
@@ -246,10 +263,10 @@ class Server:
         send_metadata(self.conn, metadata)
         send_file(self.conn, filename, file_len)
 
-    def client_send_protocol(self, received_metadata):
+    def client_send_protocol(self, received_metadata: Dict[str, Any]) -> None:
         receive_file(self.conn, received_metadata, self.outfile)
 
-    def run(self):
+    def run(self) -> None:
         """
         Receive Metadata, then if client specifies recieve mode,
         send metadata of requested file followed by the file, otherwise
@@ -262,7 +279,7 @@ class Server:
             self.client_send_protocol(received_metadata)
         self.close()
 
-    def close(self):
+    def close(self) -> None:
         if self.conn:
             self.conn.close()
         if self.encrypt:
